@@ -126,3 +126,111 @@ g++ -std=c++17 -O2 -Wall -Wextra -pthread \
     test_orderbook.cpp \
     -lgtest -lgtest_main \
     -o orderbook_tests
+
+## 📈 Time & Space Complexity
+
+This section summarizes the computational complexity and performance behavior of the Order Book implementation.
+
+---
+
+### ⏱️ Time Complexity Overview
+
+The implementation uses:
+
+- `std::map<double, PriceLevel>` — balanced tree (O(log Np))
+- `std::list<std::shared_ptr<Order>>` — stable iterators, O(1) insert/erase
+- `std::unordered_map<string, OrderLookup>` — O(1) ID lookup
+- Direct list iterators stored per order — O(1) removal/reinsertion
+
+Where:
+
+- **N = total number of orders**
+- **Np = number of price levels**
+- **k = orders at a given price**
+
+---
+
+### 🔧 Operation-by-Operation Complexity
+
+| Operation | Complexity | Notes |
+|----------|------------|-------|
+| **Add order** | O(log Np) | Find/create price level + O(1) insert |
+| **Remove order** | O(1)–O(log Np) | O(1) remove from list; O(log Np) if level becomes empty |
+| **Amend price** | O(log Np) | Remove + reinsert into new price level |
+| **Amend qty (increase)** | O(1) | Priority resets → move to back |
+| **Amend qty (decrease)** | O(1) | Priority preserved, in-place update |
+| **Top/bottom price** | O(1) | Maps store best price at `begin()` |
+| **Orders at price** | O(k) | List traversal |
+| **Orders on side** | O(Nside) | Iterate entire side |
+| **Lookup by ID** | O(1) | Hash table |
+| **Time-based queries** | O(N) | Scan all active orders |
+| **Crossed detection** | O(1) | Compare `best bid` and `best ask` |
+
+
+## ⚡ Performance Considerations
+
+### 🧬 List-Based Priority (Time Priority)
+`std::list` is used for each price level because it provides:
+
+- Stable iterators  
+- O(1) removal and reinsertion  
+- Perfect match for FIFO time-based priority  
+
+This supports realistic exchange behavior with minimal overhead.
+
+---
+
+### 🗂️ Map-Based Price Trees
+`std::map` maintains sorted prices:
+
+- Best bid = `bid_book.begin()`  
+- Best ask = `ask_book.begin()`  
+- Insert/remove price level = O(log Np)  
+- Efficient for non-contiguous price distributions  
+
+Using two separate maps (bids descending, asks ascending) simplifies logic and keeps queries O(1).
+
+---
+
+### 🚀 O(1) ID Lookup and Iterator Anchoring
+Each order ID maps to:
+
+- Side (Bid/Ask)  
+- Price  
+- Direct iterator pointing into the list  
+
+This allows:
+
+- **O(1) cancels**
+- **O(1) modifies**
+- No weak pointers  
+- No tree scans  
+- No full-level traversal  
+
+---
+
+### 🔒 Shared Pointers for Safety
+`shared_ptr<Order>` is used so:
+
+- Orders remain valid while referenced  
+- Queries can safely return references  
+- No dangling pointers or manual lifetime management  
+
+The overhead is negligible relative to correctness gains.
+
+---
+
+### 📉 Expected Real-World Behavior
+
+In typical order books:
+
+- `Np` ≪ `N`
+- Most modifications are quantity-only (O(1))
+- Most cancels are O(1)
+- Price updates are less frequent than quantity updates
+
+Thus the implementation is optimized for:
+
+- High-frequency quote traffic  
+- Stable and predictable performance  
+- Low latency under heavy update loads  

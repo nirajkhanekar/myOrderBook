@@ -71,9 +71,6 @@ int main() {
     cout << "----\n";
 
     // Fully match example: receive Order 6 to sell 150 @ 50 (matches bids)
-    // Note: matching engine not implemented in this simple version; to simulate we'd
-    // remove/mutate existing book. We'll simulate the example by directly updating quantities:
-    // The example: first consumes order 4 (100), then reduces order 1 by 50.
     cout << "Simulating fill: Order 6 sells 150 @ 50 (manual simulation)\n";
     // Remove order 4
     ob.remove_order("4");

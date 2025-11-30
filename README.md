@@ -127,29 +127,6 @@ g++ -std=c++17 -O2 -Wall -Wextra -pthread \
     -lgtest -lgtest_main \
     -o orderbook_tests
 
-## 📈 Time & Space Complexity
-
-This section summarizes the computational complexity and performance behavior of the Order Book implementation.
-
----
-
-### ⏱️ Time Complexity Overview
-
-The implementation uses:
-
-- `std::map<double, PriceLevel>` — balanced tree (O(log Np))
-- `std::list<std::shared_ptr<Order>>` — stable iterators, O(1) insert/erase
-- `std::unordered_map<string, OrderLookup>` — O(1) ID lookup
-- Direct list iterators stored per order — O(1) removal/reinsertion
-
-Where:
-
-- **N = total number of orders**
-- **Np = number of price levels**
-- **k = orders at a given price**
-
----
-
 ### 🔧 Operation-by-Operation Complexity
 
 | Operation | Complexity | Notes |
@@ -167,70 +144,84 @@ Where:
 | **Crossed detection** | O(1) | Compare `best bid` and `best ask` |
 
 
-## ⚡ Performance Considerations
+## ⚡ High-Performance Optimizations for the Order Book
 
-### 🧬 List-Based Priority (Time Priority)
-`std::list` is used for each price level because it provides:
-
-- Stable iterators  
-- O(1) removal and reinsertion  
-- Perfect match for FIFO time-based priority  
-
-This supports realistic exchange behavior with minimal overhead.
+This section outlines practical, targeted optimizations that significantly improve the performance of this Order Book implementation. These suggestions apply directly to the current C++17 design (maps + lists + iterator-based lookup) and focus on reducing memory overhead, improving cache locality, and lowering operation latency.
 
 ---
 
-### 🗂️ Map-Based Price Trees
-`std::map` maintains sorted prices:
+### 🔥 1. Replace `shared_ptr<Order>` With `unique_ptr<Order>` or Raw Pointers
+The current implementation uses `std::shared_ptr<Order>`, which incurs:
 
-- Best bid = `bid_book.begin()`  
-- Best ask = `ask_book.begin()`  
-- Insert/remove price level = O(log Np)  
-- Efficient for non-contiguous price distributions  
+- Atomic reference counting
+- Allocation of a control block
+- Extra indirections
 
-Using two separate maps (bids descending, asks ascending) simplifies logic and keeps queries O(1).
+**Optimized approach:**
 
----
+- Use `std::unique_ptr<Order>` inside price level lists  
+- Store `Order*` in the lookup table  
+- Manage lifetime through list ownership
 
-### 🚀 O(1) ID Lookup and Iterator Anchoring
-Each order ID maps to:
-
-- Side (Bid/Ask)  
-- Price  
-- Direct iterator pointing into the list  
-
-This allows:
-
-- **O(1) cancels**
-- **O(1) modifies**
-- No weak pointers  
-- No tree scans  
-- No full-level traversal  
+**Benefits:**
+- ~40% lower overhead for adds/erases
+- Zero refcounting
+- Better cache locality
 
 ---
 
-### 🔒 Shared Pointers for Safety
-`shared_ptr<Order>` is used so:
+### 🔥 2. Use `boost::container::flat_map` Instead of `std::map`
+Price levels are stored in `std::map`, which is:
 
-- Orders remain valid while referenced  
-- Queries can safely return references  
-- No dangling pointers or manual lifetime management  
+- Node-based (cache-unfriendly)
+- Pointer-dense
+- Regular tree rotations are expensive
 
-The overhead is negligible relative to correctness gains.
+**Optimized approach:**
+Use `boost::container::flat_map`.
+
+**Benefits:**
+- 3×–10× faster than `std::map` in most workloads
+- Contiguous memory → great CPU cache performance
+- Still maintains sorted order for best bid/ask retrieval
+
+Works extremely well because price levels are usually sparse.
 
 ---
 
-### 📉 Expected Real-World Behavior
+### 🔥 3. Preallocate and Pool Memory
+Dynamic heap allocation is a major cost for high-traffic order books.
 
-In typical order books:
+Replace:
+- Heap allocation for each `Order`
+- Automatic list node allocation
 
-- `Np` ≪ `N`
-- Most modifications are quantity-only (O(1))
-- Most cancels are O(1)
-- Price updates are less frequent than quantity updates
+With:
+- `boost::fast_pool_allocator`  
+- A custom object pool  
+- `boost::container::pmr` monotonic buffer resources
 
-Thus the implementation is optimized for:
+**Benefits:**
+- O(1) amortized allocation
+- Zero fragmentation
+- Predictable latency during updates
 
-- High-frequency quote traffic  
-- Stable and predictable performance  
-- Low latency under heavy update loads  
+---
+
+### 🔥 4. Convert Order IDs From Strings to Integers
+Using `std::string` as keys in the lookup table causes:
+
+- Hashing overhead
+- Memory allocations
+- Slow equality checks
+
+**Optimized approaches:**
+
+- Map string IDs → `uint64_t`
+- Maintain a tiny intern table if original IDs are required
+- Use `unordered_map<uint64_t, OrderLookup>` for the main index
+
+**Benefits:**
+- Up to 10× faster order lookup
+- Zero string comparisons
+- Much lower memory usage

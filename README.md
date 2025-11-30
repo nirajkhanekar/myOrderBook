@@ -115,3 +115,14 @@ Full unit test coverage includes:
 - ID lookup  
 - Orders-at-level iteration  
 - Edge cases
+
+## 🚀 Build Instructions
+g++ -std=c++17 -O2 -Wall -Wextra -pedantic \
+    OrderBook.cpp main.cpp \
+    -o orderbook
+    
+g++ -std=c++17 -O2 -Wall -Wextra -pthread \
+    OrderBook.cpp \
+    test_orderbook.cpp \
+    -lgtest -lgtest_main \
+    -o orderbook_tests
